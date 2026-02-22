@@ -1,0 +1,15 @@
+# Local virtual environment
+.venv/
+venv/
+
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Local research/output scratch
+.tmp/
+
