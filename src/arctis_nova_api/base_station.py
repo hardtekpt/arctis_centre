@@ -5,7 +5,18 @@ import time
 from typing import Any, Protocol
 
 from .errors import DiscoveryError, InvalidArgumentError, UnsupportedFeatureError
-from .models import AncMode, AncStatus, BatteryStatus, DeviceEvent, HeadsetConnectionStatus, MicStatus, SidetoneStatus, UsbInput, VolumeKnobEvent
+from .models import (
+    AncMode,
+    AncStatus,
+    BatteryStatus,
+    DeviceEvent,
+    HeadsetConnectionStatus,
+    MicStatus,
+    OledBrightnessStatus,
+    SidetoneStatus,
+    UsbInput,
+    VolumeKnobEvent,
+)
 
 STEELSERIES_VENDOR_ID = 0x1038
 SUPPORTED_PRODUCT_IDS = (0x12CB, 0x12CD, 0x12E0, 0x12E5, 0x225D)
@@ -24,6 +35,9 @@ class ExperimentalCommandProfile:
         default_factory=lambda: {0: AncMode.OFF, 1: AncMode.TRANSPARENCY, 2: AncMode.ANC}
     )
     usb_input_commands: dict[UsbInput, list[int]] | None = None
+    usb_input_status_command: list[int] | None = None
+    usb_input_value_index: int = 2
+    usb_input_value_map: dict[int, UsbInput] | None = None
     battery_query_command: list[int] | None = None
     sidetone_get_command: list[int] | None = None
     sidetone_set_commands: dict[int, list[int]] | None = None
@@ -34,7 +48,10 @@ class ExperimentalCommandProfile:
     )
     mic_event_command_id: int | None = 0xBB
     mic_value_index: int = 2
-    mic_on_values: set[int] | None = field(default_factory=lambda: {1})
+    # From captured packets: value 1 means MIC MUTE ON, value 0 means MIC MUTE OFF.
+    mic_muted_values: set[int] | None = field(default_factory=lambda: {1})
+    oled_brightness_status_command: list[int] | None = None
+    oled_brightness_value_index: int = 2
 
 
 class HidDeviceLike(Protocol):
@@ -76,6 +93,9 @@ class BaseStationClient:
         self._last_sidetone_status: SidetoneStatus | None = None
         self._last_anc_status: AncStatus | None = None
         self._last_mic_status: MicStatus | None = None
+        self._last_volume_status: VolumeKnobEvent | None = None
+        self._last_usb_input: UsbInput | None = None
+        self._last_oled_brightness: int | None = None
 
     def connect(self) -> None:
         interfaces: list[dict[str, Any]] = []
@@ -111,6 +131,7 @@ class BaseStationClient:
         report[1] = 0x85
         report[2] = value
         self._require_oled().write(report)
+        self._last_oled_brightness = value
 
     def return_to_steelseries_ui(self) -> None:
         report = [0] * 64
@@ -183,6 +204,20 @@ class BaseStationClient:
     def get_charging_station_battery(self, refresh_timeout_seconds: float = 0.0) -> int | None:
         status = self.get_battery_status(refresh_timeout_seconds=refresh_timeout_seconds)
         return status.charging if status else None
+
+    def get_headset_battery_percentage(self, refresh_timeout_seconds: float = 0.0) -> float | None:
+        status = self.get_battery_status(refresh_timeout_seconds=refresh_timeout_seconds)
+        return status.headset_percent if status else None
+
+    def get_charging_station_battery_percentage(self, refresh_timeout_seconds: float = 0.0) -> float | None:
+        status = self.get_battery_status(refresh_timeout_seconds=refresh_timeout_seconds)
+        return status.charging_percent if status else None
+
+    def get_headset_volume(self) -> int | None:
+        return self._last_volume_status.volume if self._last_volume_status else None
+
+    def get_headset_volume_percentage(self) -> float | None:
+        return self._last_volume_status.volume_percent if self._last_volume_status else None
 
     def get_sidetone_status(self, refresh_timeout_seconds: float = 0.0) -> SidetoneStatus | None:
         if refresh_timeout_seconds <= 0:
@@ -269,6 +304,49 @@ class BaseStationClient:
                 "USB input command profile is not configured. Provide ExperimentalCommandProfile with USB command bytes."
             )
         self._require_oled().write(self._pad_64(self._command_profile.usb_input_commands[input_source]))
+        self._last_usb_input = input_source
+
+    def get_active_usb_input(self) -> UsbInput | None:
+        return self._last_usb_input
+
+    def request_active_usb_input(self, timeout_seconds: float = 0.2) -> UsbInput | None:
+        if not self._command_profile.usb_input_status_command:
+            raise UnsupportedFeatureError(
+                "USB input status command is not configured. Provide ExperimentalCommandProfile.usb_input_status_command."
+            )
+        dev = self._require_info()
+        dev.write(self._pad_64(self._command_profile.usb_input_status_command))
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            data = dev.read(64, timeout_ms=20)
+            if not data:
+                continue
+            usb_input = self._extract_usb_input_from_report(data)
+            if usb_input is not None:
+                self._last_usb_input = usb_input
+                return usb_input
+        return self._last_usb_input
+
+    def get_oled_brightness(self) -> int | None:
+        return self._last_oled_brightness
+
+    def request_oled_brightness(self, timeout_seconds: float = 0.2) -> int | None:
+        if not self._command_profile.oled_brightness_status_command:
+            raise UnsupportedFeatureError(
+                "OLED brightness status command is not configured. Provide ExperimentalCommandProfile.oled_brightness_status_command."
+            )
+        dev = self._require_info()
+        dev.write(self._pad_64(self._command_profile.oled_brightness_status_command))
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            data = dev.read(64, timeout_ms=20)
+            if not data:
+                continue
+            value = self._extract_brightness_from_report(data)
+            if value is not None:
+                self._last_oled_brightness = value
+                return value
+        return self._last_oled_brightness
 
     def _open(self, path: Any) -> HidDeviceLike:
         dev = self._hid_backend.device()
@@ -285,6 +363,12 @@ class BaseStationClient:
             return HeadsetConnectionStatus(wireless=data[4] == 8, bluetooth=data[3] == 1, bluetooth_on=data[2] == 4)
         if data[1] == 0xB7:
             return BatteryStatus(headset=data[2], charging=data[3])
+        # OLED brightness event from captured packets:
+        # 07 85 <level> 00 ...
+        if data[1] == 0x85:
+            level = int(data[2])
+            if 1 <= level <= 10:
+                return OledBrightnessStatus(level=level)
         if profile and profile.sidetone_event_command_id is not None and data[1] == profile.sidetone_event_command_id:
             idx = profile.sidetone_value_index
             if 0 <= idx < len(data):
@@ -300,8 +384,8 @@ class BaseStationClient:
             idx = profile.mic_value_index
             if 0 <= idx < len(data):
                 value = int(data[idx])
-                on_values = profile.mic_on_values or {1}
-                return MicStatus(enabled=value in on_values)
+                muted_values = profile.mic_muted_values or {1}
+                return MicStatus(enabled=value not in muted_values)
         return None
 
     def _update_cached_state(self, event: DeviceEvent) -> None:
@@ -313,6 +397,10 @@ class BaseStationClient:
             self._last_anc_status = event
         if isinstance(event, MicStatus):
             self._last_mic_status = event
+        if isinstance(event, VolumeKnobEvent):
+            self._last_volume_status = event
+        if isinstance(event, OledBrightnessStatus):
+            self._last_oled_brightness = event.level
 
     def _require_oled(self) -> HidDeviceLike:
         if self._oled_device is None:
@@ -337,6 +425,23 @@ class BaseStationClient:
             if parsed:
                 events.append(parsed)
         return events
+
+    def _extract_usb_input_from_report(self, data: list[int]) -> UsbInput | None:
+        idx = self._command_profile.usb_input_value_index
+        if idx < 0 or idx >= len(data):
+            return None
+        value = int(data[idx])
+        value_map = self._command_profile.usb_input_value_map or {1: UsbInput.USB1, 2: UsbInput.USB2}
+        return value_map.get(value)
+
+    def _extract_brightness_from_report(self, data: list[int]) -> int | None:
+        idx = self._command_profile.oled_brightness_value_index
+        if idx < 0 or idx >= len(data):
+            return None
+        value = int(data[idx])
+        if 1 <= value <= 10:
+            return value
+        return None
 
     @staticmethod
     def _pad_64(command: list[int]) -> list[int]:

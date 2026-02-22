@@ -124,7 +124,7 @@ def test_decode_anc_and_mic_status_with_profile():
         anc_value_map={0: AncMode.OFF, 1: AncMode.TRANSPARENCY, 2: AncMode.ANC},
         mic_event_command_id=0xBB,
         mic_value_index=2,
-        mic_on_values={1},
+        mic_muted_values={1},
         sidetone_event_command_id=0x39,
         sidetone_value_index=2,
         sidetone_label_map={"off": 0, "low": 1, "med": 2, "high": 3},
@@ -146,8 +146,63 @@ def test_decode_anc_and_mic_status_with_profile():
     assert anc.mode == AncMode.ANC
     mic = client.get_mic_status()
     assert mic is not None
-    assert mic.enabled is True
+    assert mic.enabled is False
     sidetone = client.get_sidetone_status()
     assert sidetone is not None
     assert sidetone.level == 3
     assert client.get_sidetone_label() == "high"
+
+
+def test_cached_usb_input_and_oled_brightness():
+    hid = _FakeHidBackend()
+    profile = ExperimentalCommandProfile(
+        usb_input_commands={},
+    )
+    client = BaseStationClient(hid_backend=hid, command_profile=profile)
+    client.connect()
+    assert client.get_active_usb_input() is None
+    assert client.get_oled_brightness() is None
+    client.set_brightness(6)
+    assert client.get_oled_brightness() == 6
+
+
+def test_request_usb_input_and_oled_brightness():
+    from arctis_nova_api.models import UsbInput
+
+    hid = _FakeHidBackend()
+    profile = ExperimentalCommandProfile(
+        usb_input_status_command=[0x06, 0xD1],
+        usb_input_value_index=2,
+        usb_input_value_map={1: UsbInput.USB1, 2: UsbInput.USB2},
+        oled_brightness_status_command=[0x06, 0xD2],
+        oled_brightness_value_index=2,
+    )
+    client = BaseStationClient(hid_backend=hid, command_profile=profile)
+    client.connect()
+
+    info_dev = hid._created[1]
+    info_dev.read_queue = [
+        [0x07, 0xD1, 2, 0, 0],
+        [0x07, 0xD2, 7, 0, 0],
+        [],
+    ]
+
+    usb = client.request_active_usb_input(timeout_seconds=0.05)
+    brightness = client.request_oled_brightness(timeout_seconds=0.05)
+    assert usb == UsbInput.USB2
+    assert brightness == 7
+
+
+def test_decode_oled_brightness_event():
+    hid = _FakeHidBackend()
+    client = BaseStationClient(hid_backend=hid)
+    client.connect()
+
+    info_dev = hid._created[1]
+    info_dev.read_queue = [
+        [0x07, 0x85, 10, 0, 0],
+        [],
+    ]
+    events = client.get_pending_events()
+    assert events
+    assert client.get_oled_brightness() == 10

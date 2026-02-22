@@ -140,8 +140,8 @@ The API now has hardcoded defaults (from your provided sniffer captures):
   - `1 -> transparency`
   - `2 -> anc`
 - MIC event command id: `0xBB` with value map:
-  - `1 -> mic enabled` (`muted=False`)
-  - `0 -> mic disabled` (`muted=True`)
+  - `1 -> mic mute ON` (`muted=True`)
+  - `0 -> mic mute OFF` (`muted=False`)
 - Sidetone event command id: `0x39` with value map:
   - `0 -> off`
   - `1 -> low`
@@ -161,10 +161,32 @@ python examples/live_event_listener.py
 This prints decoded updates for:
 
 - headset volume
-- ANC / transparency mode
+- ANC mode (`off|anc|transparency`)
 - MIC mute state
 - sidetone level
 - battery (headset and base station)
+
+### Live State Dashboard Example
+
+Run:
+
+```bash
+python examples/live_state_dashboard.py
+```
+
+This renders and updates in real time:
+
+- headset battery
+- base station battery
+- ANC mode
+- MIC mute
+- headset volume
+
+The script persists last known values to:
+
+`tools/current_headset_state.json`
+
+When no live event is available, it shows the last state from this JSON file.
 
 ## Optional Utilities
 

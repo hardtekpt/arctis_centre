@@ -71,7 +71,7 @@ def main() -> None:
             print(f"ANC mode: {anc.mode.value}")
         mic = api.base_station.get_mic_status(refresh_timeout_seconds=0.3)
         if mic is not None:
-            print(f"MIC enabled: {mic.enabled}")
+            print(f"MIC mute: {not mic.enabled}")
         sidetone = api.base_station.get_sidetone_status(refresh_timeout_seconds=0.3)
         if sidetone is not None:
             label = api.base_station.get_sidetone_label()

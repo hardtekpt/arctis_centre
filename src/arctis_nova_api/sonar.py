@@ -152,6 +152,38 @@ class SonarClient:
         )
         return self._put_first_success(candidates)
 
+    def get_channel_mute(
+        self,
+        channel: SonarChannel,
+        streamer_slider: StreamerSlider = StreamerSlider.STREAMING,
+        streamer: bool | None = None,
+    ) -> bool:
+        volume_data = self.get_volume_data(streamer=streamer)
+        mode = self._resolve_mode_key(streamer)
+
+        new_style_value = self._extract_channel_mute_from_mode_payload(volume_data, channel, mode)
+        if new_style_value is not None:
+            return new_style_value
+
+        if mode == "stream":
+            channel_data = volume_data.get(streamer_slider.value, {}).get(channel.value, {})
+            muted = self._extract_mute_value(channel_data)
+            if muted is not None:
+                return muted
+        else:
+            channel_data = volume_data.get(channel.value, {})
+            muted = self._extract_mute_value(channel_data)
+            if muted is not None:
+                return muted
+
+        mapped = self._extract_channel_mute_from_collections(volume_data, channel)
+        if mapped is not None:
+            return mapped
+
+        raise InvalidArgumentError(
+            f"Could not read mute state for channel '{channel.value}'. Response keys: {list(volume_data.keys())}"
+        )
+
     def get_chat_mix(self) -> dict[str, Any]:
         return self._http.request("GET", f"{self.sonar_server_url}/chatMix").json()
 
@@ -159,6 +191,67 @@ class SonarClient:
         if balance < -1 or balance > 1:
             raise InvalidArgumentError("balance must be between -1.0 and 1.0")
         return self._http.request("PUT", f"{self.sonar_server_url}/chatMix?balance={balance}").json()
+
+    def get_routing_data(self) -> dict[str, Any] | list[Any]:
+        """
+        Return raw app routing data from Sonar.
+
+        Sonar endpoint shape varies across GG versions, so this probes multiple
+        known/observed routes and returns the first payload that looks usable.
+        """
+        paths = [
+            "/AudioDeviceRouting",
+            "/AudioDeviceRouting/",
+            "/audioDeviceRouting",
+            "/audioDeviceRouting/",
+            "/Applications",
+            "/Applications/",
+            "/routing",
+            "/routing/",
+            "/routingSettings",
+            "/routingSettings/",
+            "/appRouting",
+            "/appRouting/",
+            "/audioRouting",
+            "/audioRouting/",
+            "/applications",
+            "/applications/",
+            "/sessions",
+            "/sessions/",
+            "/audioSessions",
+            "/audioSessions/",
+        ]
+        last_error: ApiRequestError | None = None
+        fallback_empty_payload: dict[str, Any] | list[Any] | None = None
+        for path in paths:
+            try:
+                response = self._http.request("GET", f"{self.sonar_server_url}{path}")
+                try:
+                    payload = response.json()
+                except ValueError:
+                    # Some candidates can return non-JSON bodies; try the next path.
+                    continue
+                if isinstance(payload, (dict, list)):
+                    if payload:
+                        return payload
+                    fallback_empty_payload = payload
+            except ApiRequestError as exc:
+                last_error = exc
+                continue
+        if fallback_empty_payload is not None:
+            return fallback_empty_payload
+        if last_error:
+            raise last_error
+        raise InvalidArgumentError("Could not resolve Sonar routing endpoint")
+
+    def get_routed_apps_by_channel(self) -> dict[str, list[str]]:
+        """
+        Return app names routed to each Sonar channel.
+
+        Keys are: master, game, chatRender, media, aux, chatCapture.
+        """
+        payload = self.get_routing_data()
+        return self._extract_routed_apps_by_channel(payload)
 
     def list_presets(self, channel: PresetChannel) -> list[SonarPreset]:
         sql = "select id, name, vad from configs where vad = ? order by name collate nocase"
@@ -220,10 +313,17 @@ class SonarClient:
 
     def _volume_get_paths(self, streamer: bool | None) -> list[str]:
         if streamer is None:
-            return ["/volumeSettings", "/volumeSettings/classic", "/volumeSettings/streamer"]
+            return [
+                "/volumeSettings",
+                "/VolumeSettings",
+                "/volumeSettings/classic",
+                "/VolumeSettings/classic",
+                "/volumeSettings/streamer",
+                "/VolumeSettings/streamer",
+            ]
         if streamer:
-            return ["/volumeSettings/streamer", "/volumeSettings"]
-        return ["/volumeSettings/classic", "/volumeSettings"]
+            return ["/volumeSettings/streamer", "/VolumeSettings/streamer", "/volumeSettings", "/VolumeSettings"]
+        return ["/volumeSettings/classic", "/VolumeSettings/classic", "/volumeSettings", "/VolumeSettings"]
 
     def _resolve_mode_key(self, streamer: bool | None) -> str:
         active_stream = self.is_streamer_mode() if streamer is None else streamer
@@ -241,6 +341,8 @@ class SonarClient:
         candidates = [
             f"/volumeSettings/{section}/{mode}/{key}/{value}",
             f"/volumeSettings/{section}/{mode}/{key.capitalize()}/{value}",
+            f"/VolumeSettings/{section}/{mode}/{key}/{value}",
+            f"/VolumeSettings/{section}/{mode}/{key.capitalize()}/{value}",
         ]
 
         # Legacy endpoints.
@@ -249,16 +351,25 @@ class SonarClient:
                 candidates.append(
                     f"/volumeSettings/streamer/{streamer_slider.value}/{channel.value}/Volume/{value}"
                 )
+                candidates.append(
+                    f"/VolumeSettings/streamer/{streamer_slider.value}/{channel.value}/Volume/{value}"
+                )
             else:
                 candidates.append(
                     f"/volumeSettings/streamer/{streamer_slider.value}/{channel.value}/isMuted/{value}"
                 )
+                candidates.append(
+                    f"/VolumeSettings/streamer/{streamer_slider.value}/{channel.value}/isMuted/{value}"
+                )
         else:
             if key == "volume":
                 candidates.append(f"/volumeSettings/classic/{channel.value}/Volume/{value}")
+                candidates.append(f"/VolumeSettings/classic/{channel.value}/Volume/{value}")
             else:
                 candidates.append(f"/volumeSettings/classic/{channel.value}/Mute/{value}")
                 candidates.append(f"/volumeSettings/classic/{channel.value}/muted/{value}")
+                candidates.append(f"/VolumeSettings/classic/{channel.value}/Mute/{value}")
+                candidates.append(f"/VolumeSettings/classic/{channel.value}/muted/{value}")
         return candidates
 
     def _put_first_success(self, paths: list[str]) -> dict[str, Any]:
@@ -288,6 +399,125 @@ class SonarClient:
                 return conn.execute(sql, params).fetchall()
         except sqlite3.Error as exc:
             raise ConfigDatabaseError(f"Failed querying Sonar DB: {exc}") from exc
+
+    def _extract_routed_apps_by_channel(self, payload: Any) -> dict[str, list[str]]:
+        channels = ("master", "game", "chatRender", "media", "aux", "chatCapture")
+        routed: dict[str, list[str]] = {channel: [] for channel in channels}
+
+        aliases: dict[str, set[str]] = {
+            "master": {"master", "main"},
+            "game": {"game", "gaming"},
+            "chatRender": {"chatrender", "chat_render", "chat render", "render"},
+            "media": {"media", "music"},
+            "aux": {"aux", "auxiliary"},
+            "chatCapture": {"chatcapture", "chat_capture", "mic", "microphone", "capture"},
+        }
+
+        def normalize_channel(value: Any) -> str | None:
+            if not isinstance(value, str):
+                return None
+            normalized = value.lower().replace("-", "_")
+            for channel, channel_aliases in aliases.items():
+                if any(
+                    alias in normalized
+                    or alias in normalized.replace("_", "")
+                    for alias in channel_aliases
+                ):
+                    return channel
+            return None
+
+        def app_name_from(item: dict[str, Any]) -> str | None:
+            for key in ("name", "appName", "processName", "displayName", "title", "application", "exe", "executable"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    cleaned = value.strip()
+                    if cleaned:
+                        return cleaned
+                if isinstance(value, dict):
+                    nested = value.get("name")
+                    if isinstance(nested, str) and nested.strip():
+                        return nested.strip()
+            return None
+
+        def channel_from(item: dict[str, Any]) -> str | None:
+            for key in ("role", "channel", "deviceRole", "output", "route", "routedTo", "dest", "destination", "assignedTo"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    channel = normalize_channel(value)
+                    if channel:
+                        return channel
+                if isinstance(value, dict):
+                    for nested_key in ("role", "channel", "name", "id", "value"):
+                        nested_value = value.get(nested_key)
+                        channel = normalize_channel(nested_value)
+                        if channel:
+                            return channel
+            return None
+
+        def collect_entries(node: Any) -> list[dict[str, Any]]:
+            entries: list[dict[str, Any]] = []
+            if isinstance(node, dict):
+                for key in ("applications", "apps", "sessions", "processes", "items", "routes"):
+                    value = node.get(key)
+                    if isinstance(value, list):
+                        entries.extend([entry for entry in value if isinstance(entry, dict)])
+                # Some payloads map channels directly to app lists.
+                for key, value in node.items():
+                    mapped_channel = normalize_channel(key)
+                    if mapped_channel and isinstance(value, list):
+                        for app in value:
+                            if isinstance(app, str):
+                                routed[mapped_channel].append(app)
+                            elif isinstance(app, dict):
+                                named = app_name_from(app)
+                                if named:
+                                    routed[mapped_channel].append(named)
+                    if isinstance(value, (dict, list)):
+                        entries.extend(collect_entries(value))
+            elif isinstance(node, list):
+                for item in node:
+                    if isinstance(item, dict):
+                        entries.append(item)
+                        entries.extend(collect_entries(item))
+            return entries
+
+        for entry in collect_entries(payload):
+            app_name = app_name_from(entry)
+            channel = channel_from(entry)
+            if app_name and channel:
+                routed[channel].append(app_name)
+                continue
+            # Newer payload style from /AudioDeviceRouting:
+            # [{"role": "game", "audioSessions": [{"processName": "..."}]}]
+            sessions = entry.get("audioSessions")
+            if channel and isinstance(sessions, list):
+                session_names: list[str] = []
+                for session in sessions:
+                    if not isinstance(session, dict):
+                        continue
+                    # Prefer truly active app sessions for near real-time updates.
+                    state = session.get("state")
+                    if isinstance(state, str) and state.strip().lower() not in {"active", "running"}:
+                        continue
+                    if session.get("isSystemSound") is True:
+                        continue
+                    process_id = session.get("processId")
+                    if isinstance(process_id, int) and process_id <= 0:
+                        continue
+                    name = app_name_from(session)
+                    if name:
+                        session_names.append(name)
+                routed[channel].extend(session_names)
+
+        for channel in routed:
+            seen: set[str] = set()
+            unique: list[str] = []
+            for app in routed[channel]:
+                if app not in seen:
+                    seen.add(app)
+                    unique.append(app)
+            routed[channel] = unique
+        return routed
 
     def _detect_favorite_column(self) -> str | None:
         rows = self._query_db("pragma table_info(configs)", ())
@@ -324,6 +554,33 @@ class SonarClient:
                         return self._normalize_volume(volume)
         return None
 
+    def _extract_channel_mute_from_mode_payload(
+        self,
+        payload: dict[str, Any],
+        channel: SonarChannel,
+        mode: str,
+    ) -> bool | None:
+        if channel is SonarChannel.MASTER:
+            masters = payload.get("masters")
+            if isinstance(masters, dict):
+                mode_entry = masters.get(mode, {})
+                if isinstance(mode_entry, dict):
+                    muted = self._extract_mute_value(mode_entry)
+                    if muted is not None:
+                        return muted
+            return None
+
+        devices = payload.get("devices")
+        if isinstance(devices, dict):
+            device_entry = devices.get(channel.value)
+            if isinstance(device_entry, dict):
+                mode_entry = device_entry.get(mode, {})
+                if isinstance(mode_entry, dict):
+                    muted = self._extract_mute_value(mode_entry)
+                    if muted is not None:
+                        return muted
+        return None
+
     def _extract_channel_volume_from_collections(self, payload: dict[str, Any], channel: SonarChannel) -> float | None:
         aliases_by_channel: dict[SonarChannel, set[str]] = {
             SonarChannel.MASTER: {"master", "main"},
@@ -358,6 +615,39 @@ class SonarClient:
                     return self._normalize_volume(volume)
         return None
 
+    def _extract_channel_mute_from_collections(self, payload: dict[str, Any], channel: SonarChannel) -> bool | None:
+        aliases_by_channel: dict[SonarChannel, set[str]] = {
+            SonarChannel.MASTER: {"master", "main"},
+            SonarChannel.GAME: {"game", "gaming"},
+            SonarChannel.CHAT_RENDER: {"chatrender", "chat_render", "chat"},
+            SonarChannel.MEDIA: {"media", "music"},
+            SonarChannel.AUX: {"aux", "auxiliary"},
+            SonarChannel.CHAT_CAPTURE: {"chatcapture", "chat_capture", "mic", "microphone", "capture"},
+        }
+
+        collections: list[Any] = []
+        for key in ("devices", "masters"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                collections.append(value)
+
+        for collection in collections:
+            for item in collection:
+                if not isinstance(item, dict):
+                    continue
+                if self._item_matches_channel(item, aliases_by_channel[channel]):
+                    muted = self._extract_mute_value(item)
+                    if muted is not None:
+                        return muted
+
+        if channel is SonarChannel.MASTER and isinstance(payload.get("masters"), list) and payload["masters"]:
+            first = payload["masters"][0]
+            if isinstance(first, dict):
+                muted = self._extract_mute_value(first)
+                if muted is not None:
+                    return muted
+        return None
+
     @staticmethod
     def _item_matches_channel(item: dict[str, Any], aliases: set[str]) -> bool:
         searchable_values: list[str] = []
@@ -386,6 +676,24 @@ class SonarClient:
                     nested = value.get("value")
                     if isinstance(nested, (int, float)):
                         return float(nested)
+        return None
+
+    @staticmethod
+    def _extract_mute_value(item: dict[str, Any]) -> bool | None:
+        for key in ("muted", "isMuted", "Mute", "mute"):
+            if key not in item:
+                continue
+            value = item[key]
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"true", "1", "yes", "on"}:
+                    return True
+                if normalized in {"false", "0", "no", "off"}:
+                    return False
         return None
 
     @staticmethod

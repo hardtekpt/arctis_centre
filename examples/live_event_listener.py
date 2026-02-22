@@ -26,11 +26,9 @@ def _format_event(event: object) -> str:
     if isinstance(event, VolumeKnobEvent):
         return f"[volume] headset_volume={event.volume}"
     if isinstance(event, AncStatus):
-        anc_on = event.mode.value == "anc"
-        transparency_on = event.mode.value == "transparency"
-        return f"[anc] mode={event.mode.value} anc_on={anc_on} transparency_on={transparency_on}"
+        return f"[anc] mode={event.mode.value}"
     if isinstance(event, MicStatus):
-        return f"[mic] muted={not event.enabled} enabled={event.enabled}"
+        return f"[mic] muted={not event.enabled}"
     if isinstance(event, SidetoneStatus):
         return f"[sidetone] level={event.level}"
     if isinstance(event, BatteryStatus):
@@ -45,4 +43,3 @@ def _format_event(event: object) -> str:
 
 if __name__ == "__main__":
     main()
-

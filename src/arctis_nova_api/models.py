@@ -51,6 +51,20 @@ class BatteryStatus:
     headset: int
     charging: int
 
+    MAX_LEVEL: int = 8
+
+    @property
+    def headset_percent(self) -> float:
+        if self.MAX_LEVEL <= 0:
+            return 0.0
+        return max(0.0, min(100.0, (self.headset / self.MAX_LEVEL) * 100.0))
+
+    @property
+    def charging_percent(self) -> float:
+        if self.MAX_LEVEL <= 0:
+            return 0.0
+        return max(0.0, min(100.0, (self.charging / self.MAX_LEVEL) * 100.0))
+
 
 @dataclass(frozen=True)
 class HeadsetConnectionStatus:
@@ -62,6 +76,14 @@ class HeadsetConnectionStatus:
 @dataclass(frozen=True)
 class VolumeKnobEvent:
     volume: int
+
+    MAX_LEVEL: int = 56
+
+    @property
+    def volume_percent(self) -> float:
+        if self.MAX_LEVEL <= 0:
+            return 0.0
+        return max(0.0, min(100.0, (self.volume / self.MAX_LEVEL) * 100.0))
 
 
 @dataclass(frozen=True)
@@ -79,7 +101,20 @@ class MicStatus:
     enabled: bool
 
 
-DeviceEvent = VolumeKnobEvent | BatteryStatus | HeadsetConnectionStatus | SidetoneStatus | AncStatus | MicStatus
+@dataclass(frozen=True)
+class OledBrightnessStatus:
+    level: int
+
+
+DeviceEvent = (
+    VolumeKnobEvent
+    | BatteryStatus
+    | HeadsetConnectionStatus
+    | SidetoneStatus
+    | AncStatus
+    | MicStatus
+    | OledBrightnessStatus
+)
 
 
 @dataclass(frozen=True)

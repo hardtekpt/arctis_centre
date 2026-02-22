@@ -16,6 +16,15 @@ class _FakeResponse:
         return self.payload
 
 
+class _NonJsonResponse:
+    def __init__(self):
+        self.status_code = 200
+        self.text = "ok"
+
+    def json(self):
+        raise ValueError("not json")
+
+
 class _FakeHttpClient:
     def __init__(self, *args, **kwargs):
         self.calls = []
@@ -175,6 +184,53 @@ def test_get_channel_volume_from_mode_payload_dict(monkeypatch, tmp_path):
     assert client.get_channel_volume(SonarChannel.CHAT_CAPTURE) == 1.0
     assert client.get_channel_volume(SonarChannel.MEDIA) == 1.0
     assert client.get_channel_volume(SonarChannel.AUX) == 0.016926112
+    assert client.get_channel_mute(SonarChannel.MASTER) is False
+    assert client.get_channel_mute(SonarChannel.GAME) is False
+
+
+def test_get_channel_mute_from_devices_payload(monkeypatch, tmp_path):
+    import arctis_nova_api.sonar as sonar_module
+
+    monkeypatch.setattr(
+        sonar_module,
+        "read_core_props",
+        lambda *args, **kwargs: {"ggEncryptedAddress": "127.0.0.1:9999"},
+    )
+
+    class _DevicesMutePayloadHttp(_FakeHttpClient):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if url.endswith("/subApps"):
+                return _FakeResponse(self.subapps_payload)
+            if url.endswith("/mode/"):
+                return _FakeResponse("classic")
+            if "/volumeSettings/classic" in url or "/VolumeSettings/classic" in url:
+                return _FakeResponse(
+                    {
+                        "masters": [{"name": "master", "volume": 76, "muted": False}],
+                        "devices": [
+                            {"role": "game", "volume": 65, "muted": True},
+                            {"role": "chatRender", "volume": 44, "muted": False},
+                        ],
+                    }
+                )
+            return _FakeResponse({})
+
+    fake_http = _DevicesMutePayloadHttp()
+    monkeypatch.setattr(sonar_module, "HttpClient", lambda *args, **kwargs: fake_http)
+
+    db = tmp_path / "database.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            create table configs (id text, name text, vad integer);
+            create table selected_config (config_id text, vad integer);
+            """
+        )
+
+    client = SonarClient(sonar_db_path=db)
+    assert client.get_channel_mute(SonarChannel.GAME) is True
+    assert client.get_channel_mute(SonarChannel.CHAT_RENDER) is False
 
 
 def test_set_volume_endpoint_fallback(monkeypatch, tmp_path):
@@ -216,3 +272,193 @@ def test_set_volume_endpoint_fallback(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert any("/volumeSettings/devices/game/classic/volume/0.5" in call[1] for call in fake_http.calls)
     assert any("/volumeSettings/classic/game/Volume/0.5" in call[1] for call in fake_http.calls)
+
+
+def test_get_routed_apps_by_channel(monkeypatch, tmp_path):
+    import arctis_nova_api.sonar as sonar_module
+
+    monkeypatch.setattr(
+        sonar_module,
+        "read_core_props",
+        lambda *args, **kwargs: {"ggEncryptedAddress": "127.0.0.1:9999"},
+    )
+
+    class _RoutingHttp(_FakeHttpClient):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if url.endswith("/subApps"):
+                return _FakeResponse(self.subapps_payload)
+            if url.endswith("/routing"):
+                raise sonar_module.ApiRequestError("not found", status_code=404)
+            if url.endswith("/routingSettings"):
+                return _FakeResponse(
+                    {
+                        "applications": [
+                            {"appName": "Game.exe", "role": "game"},
+                            {"appName": "Discord.exe", "route": {"channel": "chatRender"}},
+                            {"appName": "OBS.exe", "deviceRole": "aux"},
+                            {"appName": "Spotify.exe", "output": "media"},
+                            {"appName": "MicApp.exe", "channel": "chatCapture"},
+                            {"appName": "Game.exe", "role": "game"},
+                        ]
+                    }
+                )
+            return _FakeResponse({})
+
+    fake_http = _RoutingHttp()
+    monkeypatch.setattr(sonar_module, "HttpClient", lambda *args, **kwargs: fake_http)
+
+    db = tmp_path / "database.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            create table configs (id text, name text, vad integer);
+            create table selected_config (config_id text, vad integer);
+            """
+        )
+
+    client = SonarClient(sonar_db_path=db)
+    routed = client.get_routed_apps_by_channel()
+
+    assert routed["game"] == ["Game.exe"]
+    assert routed["chatRender"] == ["Discord.exe"]
+    assert routed["aux"] == ["OBS.exe"]
+    assert routed["media"] == ["Spotify.exe"]
+    assert routed["chatCapture"] == ["MicApp.exe"]
+    assert routed["master"] == []
+
+
+def test_get_routed_apps_skips_non_json_endpoints(monkeypatch, tmp_path):
+    import arctis_nova_api.sonar as sonar_module
+
+    monkeypatch.setattr(
+        sonar_module,
+        "read_core_props",
+        lambda *args, **kwargs: {"ggEncryptedAddress": "127.0.0.1:9999"},
+    )
+
+    class _RoutingNonJsonHttp(_FakeHttpClient):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if url.endswith("/subApps"):
+                return _FakeResponse(self.subapps_payload)
+            if url.endswith("/routing"):
+                return _NonJsonResponse()
+            if url.endswith("/routingSettings"):
+                return _FakeResponse({"applications": [{"appName": "Discord.exe", "role": "chatRender"}]})
+            return _FakeResponse({})
+
+    fake_http = _RoutingNonJsonHttp()
+    monkeypatch.setattr(sonar_module, "HttpClient", lambda *args, **kwargs: fake_http)
+
+    db = tmp_path / "database.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            create table configs (id text, name text, vad integer);
+            create table selected_config (config_id text, vad integer);
+            """
+        )
+
+    client = SonarClient(sonar_db_path=db)
+    routed = client.get_routed_apps_by_channel()
+    assert routed["chatRender"] == ["Discord.exe"]
+
+
+def test_get_routed_apps_from_audio_device_routing(monkeypatch, tmp_path):
+    import arctis_nova_api.sonar as sonar_module
+
+    monkeypatch.setattr(
+        sonar_module,
+        "read_core_props",
+        lambda *args, **kwargs: {"ggEncryptedAddress": "127.0.0.1:9999"},
+    )
+
+    class _AudioDeviceRoutingHttp(_FakeHttpClient):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if url.endswith("/subApps"):
+                return _FakeResponse(self.subapps_payload)
+            if url.endswith("/AudioDeviceRouting"):
+                return _FakeResponse(
+                    [
+                        {
+                            "role": "game",
+                            "audioSessions": [
+                                {"processName": "steam"},
+                                {"displayName": "Game Overlay"},
+                            ],
+                        },
+                        {
+                            "role": "chatRender",
+                            "audioSessions": [
+                                {"processName": "Discord"},
+                            ],
+                        },
+                    ]
+                )
+            return _FakeResponse({})
+
+    fake_http = _AudioDeviceRoutingHttp()
+    monkeypatch.setattr(sonar_module, "HttpClient", lambda *args, **kwargs: fake_http)
+
+    db = tmp_path / "database.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            create table configs (id text, name text, vad integer);
+            create table selected_config (config_id text, vad integer);
+            """
+        )
+
+    client = SonarClient(sonar_db_path=db)
+    routed = client.get_routed_apps_by_channel()
+
+    assert routed["game"] == ["steam", "Game Overlay"]
+    assert routed["chatRender"] == ["Discord"]
+
+
+def test_get_routed_apps_from_audio_device_routing_prefers_active_sessions(monkeypatch, tmp_path):
+    import arctis_nova_api.sonar as sonar_module
+
+    monkeypatch.setattr(
+        sonar_module,
+        "read_core_props",
+        lambda *args, **kwargs: {"ggEncryptedAddress": "127.0.0.1:9999"},
+    )
+
+    class _ActiveAudioDeviceRoutingHttp(_FakeHttpClient):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if url.endswith("/subApps"):
+                return _FakeResponse(self.subapps_payload)
+            if url.endswith("/AudioDeviceRouting"):
+                return _FakeResponse(
+                    [
+                        {
+                            "role": "game",
+                            "audioSessions": [
+                                {"processName": "Idle", "state": "inactive", "processId": 0, "isSystemSound": True},
+                                {"processName": "steam", "state": "inactive", "processId": 100},
+                                {"processName": "cs2", "state": "active", "processId": 200},
+                            ],
+                        },
+                    ]
+                )
+            return _FakeResponse({})
+
+    fake_http = _ActiveAudioDeviceRoutingHttp()
+    monkeypatch.setattr(sonar_module, "HttpClient", lambda *args, **kwargs: fake_http)
+
+    db = tmp_path / "database.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            create table configs (id text, name text, vad integer);
+            create table selected_config (config_id text, vad integer);
+            """
+        )
+
+    client = SonarClient(sonar_db_path=db)
+    routed = client.get_routed_apps_by_channel()
+    assert routed["game"] == ["cs2"]
