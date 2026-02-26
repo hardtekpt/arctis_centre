@@ -1,0 +1,56 @@
+{
+  "headset_battery_percent": 75,
+  "base_battery_percent": 100,
+  "headset_volume_percent": 52,
+  "anc_mode": "off",
+  "mic_mute": false,
+  "sidetone_level": null,
+  "connected": null,
+  "wireless": null,
+  "bluetooth": null,
+  "chat_mix_balance": 62,
+  "oled_brightness": null,
+  "channel_volume": {
+    "master": 100,
+    "game": 83,
+    "chatRender": 54,
+    "media": 100,
+    "aux": 12,
+    "chatCapture": 100
+  },
+  "channel_mute": {
+    "master": false,
+    "game": false,
+    "chatRender": false,
+    "media": false,
+    "aux": false,
+    "chatCapture": false
+  },
+  "channel_preset": {
+    "master": null,
+    "game": "cc64bc5c-0663-4229-9b7c-4b32f579411b",
+    "chatRender": "530c2792-ff02-47d9-9861-2dd108783f3c",
+    "media": "72f387fc-ef05-4fe9-9a8d-52d645f148b2",
+    "aux": "c7fcef93-d1f3-447d-b61b-6c9051d60ac4",
+    "chatCapture": "790f3519-b9d9-4e5e-a7c6-2f6d53e55859"
+  },
+  "channel_preset_name": {
+    "master": null,
+    "game": "CS2 by FaZe",
+    "chatRender": "Clarity",
+    "media": "NATURAL",
+    "aux": "Flat",
+    "chatCapture": "Custom"
+  },
+  "channel_apps": {
+    "master": [],
+    "game": [],
+    "chatRender": [],
+    "media": [],
+    "aux": [],
+    "chatCapture": []
+  },
+  "updated_at": "02:38:26",
+  "status": "running",
+  "last_error": ""
+}
