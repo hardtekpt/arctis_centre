@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CHANNELS, type AppState, type PresetMap, type UiSettings } from "@shared/types";
 import { mergeState } from "@shared/settings";
 
@@ -25,7 +25,7 @@ export function useBridgeState() {
   const [theme, setTheme] = useState({ isDark: true, accent: "#6ab7ff" });
   const [logs, setLogs] = useState<string[]>([]);
   const [mixerData, setMixerData] = useState<MixerData>({ outputs: [], selectedOutputId: "default", apps: [] });
-  const [lockedUntil, setLockedUntil] = useState<Record<string, number>>({});
+  const lockedUntilRef = useRef<Record<string, number>>({});
   const addLog = (text: string) =>
     setLogs((prev) => [`${new Date().toLocaleTimeString()}  ${text}`, ...prev].slice(0, 200));
 
@@ -50,6 +50,7 @@ export function useBridgeState() {
       setState((prev) => {
         const merged = mergeState(next);
         const now = Date.now();
+        const lockedUntil = lockedUntilRef.current;
         for (const ch of CHANNELS) {
           if ((lockedUntil[ch] ?? 0) > now) {
             merged.channel_volume[ch] = prev.channel_volume[ch];
@@ -102,7 +103,7 @@ export function useBridgeState() {
   };
 
   const lockChannel = (channel: string, ms = 1000) => {
-    setLockedUntil((prev) => ({ ...prev, [channel]: Date.now() + ms }));
+    lockedUntilRef.current[channel] = Date.now() + ms;
   };
 
   const actions = useMemo(
