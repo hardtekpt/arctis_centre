@@ -32,6 +32,18 @@ export const DEFAULT_SETTINGS: UiSettings = {
   toggleShortcut: "CommandOrControl+Shift+A",
   visibleChannels: [...DEFAULT_CHANNELS],
   lastPage: "dashboard",
+  notifications: {
+    connectivity: true,
+    ancMode: true,
+    oled: true,
+    sidetone: true,
+    micMute: true,
+    chatMix: true,
+    headsetVolume: true,
+    battery: true,
+    appInfo: true,
+    presetChange: true,
+  },
 };
 
 export function mergeState(partial?: Partial<AppState>): AppState {
@@ -67,6 +79,10 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     flyoutWidth: clamp((partial?.flyoutWidth ?? DEFAULT_SETTINGS.flyoutWidth), 320, 1000),
     flyoutHeight: clamp((partial?.flyoutHeight ?? DEFAULT_SETTINGS.flyoutHeight), 260, 1200),
     visibleChannels,
+    notifications: {
+      ...DEFAULT_SETTINGS.notifications,
+      ...(partial?.notifications ?? {}),
+    },
   };
 }
 

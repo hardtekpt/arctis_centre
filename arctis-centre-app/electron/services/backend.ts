@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { EventEmitter } from "node:events";
 import type { AppState, BackendCommand, PresetMap } from "../../shared/types";
-import { mergeState } from "../../shared/settings";
+import { mergeState } from "../../shared/settings.js";
 
 type BridgeEvent =
   | { type: "state"; payload: AppState }

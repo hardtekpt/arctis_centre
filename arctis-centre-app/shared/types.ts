@@ -9,6 +9,18 @@ export const CHANNELS = [
 
 export type ChannelKey = (typeof CHANNELS)[number];
 
+export type NotificationKey =
+  | "connectivity"
+  | "ancMode"
+  | "oled"
+  | "sidetone"
+  | "micMute"
+  | "chatMix"
+  | "headsetVolume"
+  | "battery"
+  | "appInfo"
+  | "presetChange";
+
 export interface AppState {
   headset_battery_percent: number | null;
   base_battery_percent: number | null;
@@ -39,6 +51,7 @@ export interface UiSettings {
   toggleShortcut: string;
   visibleChannels: ChannelKey[];
   lastPage: "dashboard" | "settings" | "about";
+  notifications: Record<NotificationKey, boolean>;
 }
 
 export interface BackendCommand {

@@ -151,6 +151,9 @@ export function useBridgeState() {
           addLog(`ERROR: Failed to open SteelSeries GG (${result.detail})`);
         }
       },
+      notifyCustom: async (title: string, body: string) => {
+        await window.arctisBridge.notifyCustom(title, body);
+      },
       refreshMixer: async () => {
         const mixer = await window.arctisBridge.getMixerData();
         setMixerData(mixer);

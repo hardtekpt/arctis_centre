@@ -20,6 +20,7 @@ interface MixerDataPayload {
 const api = {
   getInitial: (): Promise<InitialPayload> => ipcRenderer.invoke("app:get-initial"),
   openGG: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke("app:open-gg"),
+  notifyCustom: (title: string, body: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-custom", { title, body }),
   getMixerData: (): Promise<MixerDataPayload> => ipcRenderer.invoke("mixer:get-data"),
   setMixerOutput: (outputId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("mixer:set-output", outputId),
   setMixerAppVolume: (appId: string, volume: number): Promise<{ ok: boolean }> =>

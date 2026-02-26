@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
+import { Notification, app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -6,8 +6,8 @@ import { execFile } from "node:child_process";
 import { BackendBridge } from "./services/backend";
 import { createFlyoutWindow, positionBottomRight, saveWindowBounds } from "./window";
 import { buildTrayIcon, createTray } from "./tray";
-import { DEFAULT_SETTINGS, mergeSettings, mergeState } from "../shared/settings";
-import type { AppState, BackendCommand, PresetMap, UiSettings } from "../shared/types";
+import { DEFAULT_SETTINGS, mergeSettings, mergeState } from "../shared/settings.js";
+import type { AppState, BackendCommand, ChannelKey, PresetMap, UiSettings } from "../shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -29,6 +29,7 @@ let pendingFlyoutOpen = false;
 let isQuitting = false;
 let isOpeningFlyout = false;
 let suppressBlurUntil = 0;
+let hasSeenLiveState = false;
 
 const APP_STATE_VERSION = 1;
 
@@ -140,6 +141,96 @@ function loadPersistedSnapshot(): void {
 function pushLog(text: string): void {
   const line = `${new Date().toLocaleTimeString()}  ${text}`;
   logBuffer = [line, ...logBuffer].slice(0, 200);
+}
+
+function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
+  return settings.notifications?.[key] !== false;
+}
+
+function showSystemNotification(title: string, body: string): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+  try {
+    const notification = new Notification({
+      title,
+      body,
+      icon: buildTrayIcon(),
+      silent: false,
+    });
+    notification.show();
+  } catch {
+    return;
+  }
+}
+
+function toPercentLabel(value: number | null): string {
+  if (value == null || Number.isNaN(value)) {
+    return "N/A";
+  }
+  return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+}
+
+function channelDisplayName(channel: string): string {
+  if (channel === "chatRender") return "CHAT";
+  if (channel === "chatCapture") return "MIC";
+  return String(channel || "").toUpperCase();
+}
+
+function notifyStateChanges(previous: AppState, next: AppState): void {
+  if (isNotifEnabled("connectivity")) {
+    if (previous.connected !== next.connected && next.connected != null) {
+      showSystemNotification("Arctis Centre", next.connected ? "Headset connected" : "Headset disconnected");
+    }
+  }
+  if (isNotifEnabled("ancMode") && previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
+    showSystemNotification("Arctis Centre", `ANC mode: ${next.anc_mode}`);
+  }
+  if (isNotifEnabled("oled") && previous.oled_brightness !== next.oled_brightness && next.oled_brightness != null) {
+    showSystemNotification("Arctis Centre", `OLED brightness: ${next.oled_brightness}`);
+  }
+  if (isNotifEnabled("sidetone") && previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
+    showSystemNotification("Arctis Centre", `Sidetone: ${next.sidetone_level}`);
+  }
+  if (isNotifEnabled("micMute") && previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
+    showSystemNotification("Arctis Centre", `Mic ${next.mic_mute ? "muted" : "live"}`);
+  }
+  if (isNotifEnabled("chatMix") && previous.chat_mix_balance !== next.chat_mix_balance && next.chat_mix_balance != null) {
+    showSystemNotification("Arctis Centre", `Chat mix: ${toPercentLabel(next.chat_mix_balance)}`);
+  }
+  if (isNotifEnabled("headsetVolume") && previous.headset_volume_percent !== next.headset_volume_percent && next.headset_volume_percent != null) {
+    showSystemNotification("Arctis Centre", `Headset volume: ${toPercentLabel(next.headset_volume_percent)}`);
+  }
+  if (isNotifEnabled("battery")) {
+    const prevHeadset = previous.headset_battery_percent;
+    const nextHeadset = next.headset_battery_percent;
+    if (prevHeadset != null && nextHeadset != null) {
+      if (prevHeadset > 20 && nextHeadset <= 20) {
+        showSystemNotification("Arctis Centre", `Headset battery low (${toPercentLabel(nextHeadset)})`);
+      } else if (prevHeadset < 95 && nextHeadset >= 95) {
+        showSystemNotification("Arctis Centre", `Headset battery charged (${toPercentLabel(nextHeadset)})`);
+      }
+    }
+    const prevBase = previous.base_battery_percent;
+    const nextBase = next.base_battery_percent;
+    if (prevBase != null && nextBase != null) {
+      if (prevBase > 20 && nextBase <= 20) {
+        showSystemNotification("Arctis Centre", `Base battery low (${toPercentLabel(nextBase)})`);
+      } else if (prevBase < 95 && nextBase >= 95) {
+        showSystemNotification("Arctis Centre", `Base battery charged (${toPercentLabel(nextBase)})`);
+      }
+    }
+  }
+  if (isNotifEnabled("presetChange")) {
+    const prevPreset = previous.channel_preset ?? {};
+    const nextPreset = next.channel_preset ?? {};
+    for (const [channel, nextValue] of Object.entries(nextPreset) as Array<[ChannelKey, string | null | undefined]>) {
+      const prevValue = prevPreset[channel];
+      if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
+        showSystemNotification("Arctis Centre", `${channelDisplayName(channel)} preset: ${String(nextValue)}`);
+      }
+    }
+  }
 }
 
 function detectWorkspaceRoot(): string {
@@ -396,7 +487,13 @@ function wireBackend(): void {
     return;
   }
   backend.on("state", (state: AppState) => {
+    const previous = cachedState;
     cachedState = harmonizeLiveState(cachedState, state);
+    if (hasSeenLiveState) {
+      notifyStateChanges(previous, cachedState);
+    } else {
+      hasSeenLiveState = true;
+    }
     schedulePersist();
     for (const win of allWindows()) {
       win.webContents.send("backend:state", cachedState);
@@ -413,6 +510,12 @@ function wireBackend(): void {
     lastStatusText = text;
     lastErrorText = null;
     pushLog(text);
+    if (isNotifEnabled("appInfo")) {
+      const lower = text.toLowerCase();
+      if (lower.includes("starting backend") || lower.includes("backend exited") || lower.includes("ready")) {
+        showSystemNotification("Arctis Centre", text);
+      }
+    }
     schedulePersist();
     for (const win of allWindows()) {
       win.webContents.send("backend:status", text);
@@ -422,6 +525,9 @@ function wireBackend(): void {
     lastErrorText = text;
     lastStatusText = text;
     pushLog(`ERROR: ${text}`);
+    if (isNotifEnabled("appInfo")) {
+      showSystemNotification("Arctis Centre Error", text);
+    }
     schedulePersist();
     for (const win of allWindows()) {
       win.webContents.send("backend:error", text);
@@ -486,6 +592,12 @@ function wireIpc(): void {
     }
     const uriResult = await shell.openExternal("steelseriesgg://", { activate: true });
     return { ok: uriResult, detail: "steelseriesgg://" };
+  });
+  ipcMain.handle("app:notify-custom", async (_evt, payload: { title?: string; body?: string }) => {
+    const title = String(payload?.title || "").trim() || "Arctis Centre";
+    const body = String(payload?.body || "").trim() || "Notification";
+    showSystemNotification(title, body);
+    return { ok: true };
   });
   ipcMain.handle("mixer:get-data", async () => {
     const outputs = await getMixerOutputs();
@@ -587,11 +699,20 @@ function registerToggleShortcut(accelerator: string): void {
     const ok = globalShortcut.register(accelerator, () => toggleFlyout());
     if (!ok) {
       mainWindow?.webContents.send("backend:error", `Unable to register shortcut: ${accelerator}`);
+      if (isNotifEnabled("appInfo")) {
+        showSystemNotification("Arctis Centre Error", `Unable to register shortcut: ${accelerator}`);
+      }
     } else {
       mainWindow?.webContents.send("backend:status", `Shortcut registered: ${accelerator}`);
+      if (isNotifEnabled("appInfo")) {
+        showSystemNotification("Arctis Centre", `Shortcut registered: ${accelerator}`);
+      }
     }
   } catch (err) {
     mainWindow?.webContents.send("backend:error", `Invalid shortcut: ${accelerator} (${String(err)})`);
+    if (isNotifEnabled("appInfo")) {
+      showSystemNotification("Arctis Centre Error", `Invalid shortcut: ${accelerator}`);
+    }
   }
 }
 
@@ -721,6 +842,9 @@ async function createApp(): Promise<void> {
   });
 
   registerToggleShortcut(settings.toggleShortcut);
+  if (isNotifEnabled("appInfo")) {
+    showSystemNotification("Arctis Centre", "App started");
+  }
 }
 
 app.whenReady().then(createApp);

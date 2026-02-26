@@ -15,6 +15,7 @@ declare global {
         logs: string[];
       }>;
       openGG: () => Promise<{ ok: boolean; detail: string }>;
+      notifyCustom: (title: string, body: string) => Promise<{ ok: boolean }>;
       getMixerData: () => Promise<{
         outputs: Array<{ id: string; name: string }>;
         selectedOutputId: string;

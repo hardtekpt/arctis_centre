@@ -74,7 +74,11 @@ export default function App() {
   if (windowMode === "settings") {
     return (
       <main className="window-base app-shell standalone-page">
-        <SettingsPage settings={settings} onUpdate={(partial) => void actions.persistSettings(partial)} />
+        <SettingsPage
+          settings={settings}
+          onUpdate={(partial) => void actions.persistSettings(partial)}
+          onTestNotification={() => void actions.notifyCustom("Arctis Centre", "Test notification from settings")}
+        />
         <div className="standalone-actions">
           <button className="button" onClick={() => actions.closeCurrentWindow()}>
             Close

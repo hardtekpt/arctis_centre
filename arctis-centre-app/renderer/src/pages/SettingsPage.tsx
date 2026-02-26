@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
-import { CHANNELS, type ChannelKey, type UiSettings } from "@shared/types";
+import { CHANNELS, type ChannelKey, type NotificationKey, type UiSettings } from "@shared/types";
 
 interface SettingsProps {
   settings: UiSettings;
   onUpdate: (partial: Partial<UiSettings>) => void;
+  onTestNotification: () => void;
 }
 
-export default function SettingsPage({ settings, onUpdate }: SettingsProps) {
+const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
+  { key: "appInfo", label: "Main App Info (Startup/Errors)" },
+  { key: "connectivity", label: "Connect/Disconnect" },
+  { key: "ancMode", label: "ANC Mode" },
+  { key: "oled", label: "OLED Brightness" },
+  { key: "sidetone", label: "Sidetone" },
+  { key: "micMute", label: "MIC Mute State" },
+  { key: "chatMix", label: "Chat Mix" },
+  { key: "headsetVolume", label: "Headset Volume" },
+  { key: "battery", label: "Battery (Low/Charged)" },
+  { key: "presetChange", label: "Sonar Preset Change" },
+];
+
+export default function SettingsPage({ settings, onUpdate, onTestNotification }: SettingsProps) {
   const [shortcutDraft, setShortcutDraft] = useState(settings.toggleShortcut);
   useEffect(() => setShortcutDraft(settings.toggleShortcut), [settings.toggleShortcut]);
 
@@ -15,6 +29,15 @@ export default function SettingsPage({ settings, onUpdate }: SettingsProps) {
       ? Array.from(new Set([...settings.visibleChannels, channel]))
       : settings.visibleChannels.filter((value) => value !== channel);
     onUpdate({ visibleChannels: next });
+  };
+
+  const toggleNotification = (key: NotificationKey, enabled: boolean) => {
+    onUpdate({
+      notifications: {
+        ...settings.notifications,
+        [key]: enabled,
+      },
+    });
   };
 
   return (
@@ -81,6 +104,26 @@ export default function SettingsPage({ settings, onUpdate }: SettingsProps) {
               </label>
             );
           })}
+        </div>
+      </div>
+      <div className="visible-channels">
+        <div className="visible-title">Notifications</div>
+        <div className="visible-grid">
+          {NOTIFICATION_LABELS.map((item) => (
+            <label key={item.key} className="visible-item">
+              <input
+                type="checkbox"
+                checked={settings.notifications[item.key]}
+                onChange={(e) => toggleNotification(item.key, e.currentTarget.checked)}
+              />
+              <span>{item.label}</span>
+            </label>
+          ))}
+        </div>
+        <div style={{ marginTop: "8px" }}>
+          <button className="button" onClick={onTestNotification}>
+            Push Test Notification
+          </button>
         </div>
       </div>
       <p className="hint">Settings are saved in %APPDATA% userData JSON.</p>
