@@ -6,8 +6,8 @@
   "anc_mode": "off",
   "mic_mute": false,
   "sidetone_level": null,
-  "headset_volume": 27,
-  "headset_volume_percent": 48.2,
+  "headset_volume": 26,
+  "headset_volume_percent": 46.4,
   "headset_connected": true,
   "headset_wireless": true,
   "headset_bluetooth": false,
@@ -51,9 +51,9 @@
   "routed_app_movements": [
     "zen: - -> media"
   ],
-  "routed_app_moves_last_utc": "2026-02-22T20:36:24Z",
+  "routed_app_moves_last_utc": "2026-02-22T20:40:21Z",
   "active_usb_input": null,
   "oled_brightness": null,
   "sonar_last_refresh_utc": "2026-02-22T20:21:02Z",
-  "last_update_utc": "2026-02-22T20:36:24Z"
+  "last_update_utc": "2026-02-22T20:40:43Z"
 }

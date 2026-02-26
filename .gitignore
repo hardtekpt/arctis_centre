@@ -1,15 +1,49 @@
-# Local virtual environment
+# Workspace local env/scratch
 .venv/
 venv/
+.tmp/
 
-# Python cache/artifacts
+# Python artifacts
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Local research/output scratch
-.tmp/
+# Node/Electron artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.cache/
+.parcel-cache/
 
+# Generic build/package outputs
+dist/
+out/
+release/
+build/
+
+# .NET / Visual Studio artifacts
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# App-specific generated outputs
+arctis-centre-app/.electron-build/
+arctis-centre-app/.vite/
+applications/**/node_modules/
+applications/**/dist/
+applications/**/build/
+applications/twinkle-tray/cache/
+applications/twinkle-tray/logs/
+tools/tray_dashboard_state.json

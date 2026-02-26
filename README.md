@@ -192,6 +192,34 @@ When no live event is available, it shows the last state from this JSON file.
 
 The helper scripts `tools/capture_usb_commands.py` and `tools/replay_hid_command.py` are kept in this project as optional, experimental utilities. They are not part of the core supported workflow.
 
+## Desktop Applications
+
+Application-style clients live under `applications/`, each in its own folder.
+
+### Windows Tray Dashboard
+
+`applications/tray_dashboard` provides a compact Windows tray app with a floating control window.
+
+Install:
+
+```powershell
+python -m pip install -r applications/tray_dashboard/requirements.txt
+```
+
+Run:
+
+```powershell
+python applications/tray_dashboard/main.py
+```
+
+### Native Windows Dashboard (WPF + Python Service)
+
+`applications/native_windows_dashboard` provides a native Windows frontend (WPF tray app) with a separate always-running Python backend service.
+
+See:
+
+`applications/native_windows_dashboard/README.md`
+
 ### Active Query Commands (Battery / Sidetone)
 
 Passive battery updates are decoded from incoming `0xB7` reports (both `0x06` and `0x07` report headers).
