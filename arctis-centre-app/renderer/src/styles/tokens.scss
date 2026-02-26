@@ -11,6 +11,9 @@
 
   --slider-track-color: rgba(0, 0, 0, 0.42);
   --slider-thumb-border: #ffffff;
+  --slider-thumb-fill: var(--system-accent-medium);
+  --slider-thumb-ring: rgb(255 255 255 / 40%);
+  --slider-thumb-shadow: rgb(0 0 0 / 60%);
   --tray-background-base: #e4e4e4;
   --tray-background: var(--tray-background-base);
   --tray-text: #000000;
@@ -37,6 +40,9 @@
   --page-section-bg: #ffffff0a;
   --slider-track-color: #9b9b9b;
   --slider-thumb-border: #414141;
+  --slider-thumb-fill: var(--system-accent-medium);
+  --slider-thumb-ring: rgb(255 255 255 / 24%);
+  --slider-thumb-shadow: rgb(0 0 0 / 72%);
   --button-background: #8a8a8a2b;
   --button-highlight: #b1b1b123;
   --button-border: #9797972b;
