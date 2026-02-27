@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mergeState = exports.mergeSettings = exports.DEFAULT_STATE = exports.DEFAULT_SETTINGS = exports.DEFAULT_CHANNELS = void 0;
+var defaults_1 = require("./defaults");
+Object.defineProperty(exports, "DEFAULT_CHANNELS", { enumerable: true, get: function () { return defaults_1.DEFAULT_CHANNELS; } });
+Object.defineProperty(exports, "DEFAULT_SETTINGS", { enumerable: true, get: function () { return defaults_1.DEFAULT_SETTINGS; } });
+Object.defineProperty(exports, "DEFAULT_STATE", { enumerable: true, get: function () { return defaults_1.DEFAULT_STATE; } });
+var schema_1 = require("./schema");
+Object.defineProperty(exports, "mergeSettings", { enumerable: true, get: function () { return schema_1.mergeSettings; } });
+Object.defineProperty(exports, "mergeState", { enumerable: true, get: function () { return schema_1.mergeState; } });

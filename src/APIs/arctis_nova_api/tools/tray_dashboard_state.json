@@ -1,0 +1,53 @@
+{
+  "headset_battery_percent": 88,
+  "base_battery_percent": 100,
+  "headset_volume_percent": 52,
+  "anc_mode": null,
+  "mic_mute": null,
+  "sidetone_level": null,
+  "connected": null,
+  "wireless": null,
+  "bluetooth": null,
+  "chat_mix_balance": null,
+  "oled_brightness": null,
+  "channel_volume": {
+    "master": 100,
+    "game": 82,
+    "chatRender": 100,
+    "media": 100,
+    "aux": 2,
+    "chatCapture": 100
+  },
+  "channel_mute": {
+    "master": false,
+    "game": false,
+    "chatRender": false,
+    "media": false,
+    "aux": false,
+    "chatCapture": false
+  },
+  "channel_preset": {
+    "master": null,
+    "game": "cc64bc5c-0663-4229-9b7c-4b32f579411b",
+    "chatRender": "530c2792-ff02-47d9-9861-2dd108783f3c",
+    "media": "b3e0ffa3-77cd-498d-a8c1-8a99a20f1336",
+    "aux": "c7fcef93-d1f3-447d-b61b-6c9051d60ac4",
+    "chatCapture": "790f3519-b9d9-4e5e-a7c6-2f6d53e55859"
+  },
+  "channel_apps": {
+    "master": [],
+    "game": [
+      "cs2"
+    ],
+    "chatRender": [
+      "Discord"
+    ],
+    "media": [],
+    "aux": [],
+    "chatCapture": [
+      "Discord",
+      "cs2"
+    ]
+  },
+  "updated_at": "22:15:34"
+}
