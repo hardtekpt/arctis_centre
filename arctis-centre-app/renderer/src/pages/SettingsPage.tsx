@@ -92,6 +92,24 @@ export default function SettingsPage({ settings, onUpdate, onTestNotification }:
         <span>Close on blur</span>
         <input type="checkbox" checked={settings.closeOnBlur} onChange={(e) => onUpdate({ closeOnBlur: e.currentTarget.checked })} />
       </label>
+      <label className="form-row">
+        <span>Mica blur</span>
+        <input type="checkbox" checked={settings.micaBlur} onChange={(e) => onUpdate({ micaBlur: e.currentTarget.checked })} />
+      </label>
+      <label className="form-row">
+        <span>Notification timeout</span>
+        <div className="accent-row">
+          <input
+            className="text-input"
+            type="number"
+            min={2}
+            max={30}
+            value={settings.notificationTimeout}
+            onChange={(e) => onUpdate({ notificationTimeout: Number(e.currentTarget.value) || 5 })}
+          />
+          <span>seconds</span>
+        </div>
+      </label>
       <div className="visible-channels">
         <div className="visible-title">Visible Sonar Channels</div>
         <div className="visible-grid">

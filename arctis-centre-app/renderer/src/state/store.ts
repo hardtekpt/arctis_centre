@@ -28,6 +28,13 @@ export function useBridgeState() {
   const lockedUntilRef = useRef<Record<string, number>>({});
   const addLog = (text: string) =>
     setLogs((prev) => [`${new Date().toLocaleTimeString()}  ${text}`, ...prev].slice(0, 200));
+  const windowMode = useMemo(() => {
+    const mode = new URLSearchParams(window.location.search).get("window");
+    if (mode === "settings" || mode === "about" || mode === "notification") {
+      return mode;
+    }
+    return "dashboard";
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -40,11 +47,14 @@ export function useBridgeState() {
       setStatus(payload.status ?? "ready");
       setError(payload.error ?? null);
       setLogs(Array.isArray(payload.logs) ? payload.logs : []);
-      const mixer = await window.arctisBridge.getMixerData().catch(() => null);
-      if (mixer) {
-        setMixerData(mixer);
-      }
       setReady(true);
+      if (windowMode === "dashboard") {
+        const mixer = await window.arctisBridge.getMixerData().catch(() => null);
+        if (disposed) return;
+        if (mixer) {
+          setMixerData(mixer);
+        }
+      }
     });
     const offState = window.arctisBridge.onState((next) => {
       setState((prev) => {
@@ -83,13 +93,14 @@ export function useBridgeState() {
       offTheme();
       offSettings();
     };
-  }, []);
+  }, [windowMode]);
 
   useEffect(() => {
     if (!settings) return;
     const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
     const accent = settings.accentColor.trim() ? settings.accentColor : theme.accent;
     document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    document.documentElement.dataset.mica = settings.micaBlur ? "true" : "false";
     document.documentElement.style.setProperty("--system-accent-color", accent);
     document.documentElement.style.setProperty("--system-accent-medium", accent);
     document.documentElement.style.setProperty("--system-accent-dark1", accent);

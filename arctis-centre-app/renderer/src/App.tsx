@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import DashboardPage from "./pages/DashboardPage";
 import SettingsPage from "./pages/SettingsPage";
 import AboutPage from "./pages/AboutPage";
@@ -57,11 +57,34 @@ function SteelSeriesIcon() {
   );
 }
 
+function NotificationPage({ timeoutSeconds, onClose }: { timeoutSeconds: number; onClose: () => void }) {
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const title = params.get("title") ?? "Arctis Centre";
+  const body = params.get("body") ?? "";
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => onClose(), Math.max(2, timeoutSeconds) * 1000);
+    return () => window.clearTimeout(timer);
+  }, [timeoutSeconds, onClose]);
+
+  return (
+    <main className="window-base app-shell notification-shell">
+      <section className="notification-page">
+        <div className="notification-mark">A</div>
+        <div className="notification-copy">
+          <div className="notification-title">{title}</div>
+          <div className="notification-body">{body}</div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   const { ready, state, presets, settings, status, error, logs, mixerData, actions } = useBridgeState();
   const windowMode = useMemo(() => {
     const mode = new URLSearchParams(window.location.search).get("window");
-    if (mode === "settings" || mode === "about") {
+    if (mode === "settings" || mode === "about" || mode === "notification") {
       return mode;
     }
     return "dashboard";
@@ -99,6 +122,10 @@ export default function App() {
         </div>
       </main>
     );
+  }
+
+  if (windowMode === "notification") {
+    return <NotificationPage timeoutSeconds={settings.notificationTimeout} onClose={() => actions.closeCurrentWindow()} />;
   }
 
   return (

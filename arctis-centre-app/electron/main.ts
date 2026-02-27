@@ -12,6 +12,7 @@ import type { AppState, BackendCommand, ChannelKey, PresetMap, UiSettings } from
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let aboutWindow: BrowserWindow | null = null;
+let notificationWindows: BrowserWindow[] = [];
 let tray: Electron.Tray | null = null;
 let settings: UiSettings = DEFAULT_SETTINGS;
 let cachedState: AppState = mergeState();
@@ -148,19 +149,21 @@ function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
 }
 
 function showSystemNotification(title: string, body: string): void {
-  if (!Notification.isSupported()) {
+  if (!title.trim() && !body.trim()) {
     return;
   }
-  try {
-    const notification = new Notification({
-      title,
-      body,
-      icon: buildTrayIcon(),
-      silent: false,
-    });
-    notification.show();
-  } catch {
+  void showNotificationWindow(title, body);
+}
+
+function applyWindowBackgroundMaterial(win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed()) {
     return;
+  }
+}
+
+function applyBackgroundMaterialToAllWindows(): void {
+  for (const win of allWindows()) {
+    applyWindowBackgroundMaterial(win);
   }
 }
 
@@ -175,6 +178,12 @@ function channelDisplayName(channel: string): string {
   if (channel === "chatRender") return "CHAT";
   if (channel === "chatCapture") return "MIC";
   return String(channel || "").toUpperCase();
+}
+
+function getPresetDisplayName(channel: ChannelKey, presetId: string): string {
+  const presets = cachedPresets[channel] ?? [];
+  const match = presets.find(([id]) => id === presetId);
+  return match?.[1] ?? presetId;
 }
 
 function notifyStateChanges(previous: AppState, next: AppState): void {
@@ -227,7 +236,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     for (const [channel, nextValue] of Object.entries(nextPreset) as Array<[ChannelKey, string | null | undefined]>) {
       const prevValue = prevPreset[channel];
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
-        showSystemNotification("Arctis Centre", `${channelDisplayName(channel)} preset: ${String(nextValue)}`);
+        showSystemNotification("Arctis Centre", `${channelDisplayName(channel)} preset: ${getPresetDisplayName(channel, String(nextValue))}`);
       }
     }
   }
@@ -394,12 +403,26 @@ function harmonizeLiveState(previous: AppState, incoming: AppState): AppState {
 
 function allWindows(): BrowserWindow[] {
   const wins: BrowserWindow[] = [];
-  for (const win of [mainWindow, settingsWindow, aboutWindow]) {
+  for (const win of [mainWindow, settingsWindow, aboutWindow, ...notificationWindows]) {
     if (win && !win.isDestroyed()) {
       wins.push(win);
     }
   }
   return wins;
+}
+
+function relayoutNotificationWindows(): void {
+  const display = electronScreen.getPrimaryDisplay();
+  const workArea = display.workArea;
+  const margin = 12;
+  let y = workArea.y + margin;
+  for (const win of notificationWindows.filter((candidate) => !candidate.isDestroyed())) {
+    const bounds = win.getBounds();
+    const x = workArea.x + workArea.width - bounds.width - margin;
+    win.setPosition(x, y, false);
+    y += bounds.height + 10;
+  }
+  notificationWindows = notificationWindows.filter((candidate) => !candidate.isDestroyed());
 }
 
 function clampPercent(value: number): number {
@@ -568,11 +591,12 @@ function wireIpc(): void {
       hideFlyout();
       return;
     }
-    win.hide();
+    win.close();
   });
   ipcMain.handle("settings:set", (_evt, partial: Partial<UiSettings>) => {
     const next = persistSettings({ ...settings, ...partial });
     registerToggleShortcut(next.toggleShortcut);
+    applyBackgroundMaterialToAllWindows();
     for (const win of allWindows()) {
       win.webContents.send("settings:update", next);
     }
@@ -655,15 +679,162 @@ async function createCenteredWindow(page: "settings" | "about", width: number, h
     resizable: false,
     skipTaskbar: false,
     title,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  applyWindowBackgroundMaterial(win);
   await loadWindowPage(win, page);
   return win;
+}
+
+async function showNotificationWindow(title: string, body: string): Promise<void> {
+  const theme = await getThemePayload();
+  const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
+  const accent = settings.accentColor.trim() || theme.accent;
+  const shellBg = isDark ? "rgba(24,24,24,0.86)" : "rgba(248,248,248,0.92)";
+  const textColor = isDark ? "#ffffff" : "#111111";
+  const subText = isDark ? "rgba(255,255,255,0.78)" : "rgba(0,0,0,0.72)";
+  const borderColor = isDark ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.28)";
+  const cardBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.45)";
+  const blurCss = settings.micaBlur ? "backdrop-filter: blur(18px) saturate(125%); -webkit-backdrop-filter: blur(18px) saturate(125%);" : "";
+  const esc = (value: string) =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;");
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          background: transparent;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        body {
+          color: ${textColor};
+          padding: 0;
+        }
+        .shell {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 12px;
+          background: ${shellBg};
+          border: 1px solid ${borderColor};
+          box-shadow: 0 10px 24px rgba(0,0,0,0.28), inset 0 0 0 0.5px ${borderColor};
+          ${blurCss}
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 10px;
+          align-items: start;
+          padding: 10px 12px;
+        }
+        .mark {
+          width: 30px;
+          height: 30px;
+          border-radius: 999px;
+          display: grid;
+          place-items: center;
+          background: color-mix(in srgb, ${accent} 24%, transparent);
+          color: ${accent};
+          font-size: 14px;
+          font-weight: 700;
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, ${accent} 46%, transparent);
+        }
+        .copy {
+          min-width: 0;
+        }
+        .title {
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 1.2;
+          margin-bottom: 4px;
+        }
+        .body {
+          font-size: 12px;
+          line-height: 1.35;
+          color: ${subText};
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+        .body-card {
+          background: ${cardBg};
+          border-radius: 8px;
+          padding: 8px 9px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell">
+        <div class="mark">A</div>
+        <div class="copy">
+          <div class="title">${esc(title)}</div>
+          <div class="body-card">
+            <div class="body">${esc(body)}</div>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>`;
+  const win = new BrowserWindow({
+    width: 340,
+    height: 108,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: true,
+    hasShadow: true,
+  });
+  applyWindowBackgroundMaterial(win);
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  notificationWindows.push(win);
+  relayoutNotificationWindows();
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  const showNotification = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    relayoutNotificationWindows();
+    win.show();
+    win.setFocusable(false);
+    win.setIgnoreMouseEvents(true);
+    setTimeout(() => {
+      if (!win.isDestroyed()) {
+        win.close();
+      }
+    }, Math.max(2, settings.notificationTimeout) * 1000);
+  };
+  win.once("ready-to-show", showNotification);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showNotification();
+    }
+  });
+  win.on("closed", () => {
+    notificationWindows = notificationWindows.filter((candidate) => candidate !== win);
+    relayoutNotificationWindows();
+  });
 }
 
 async function showSettingsWindow(): Promise<void> {
@@ -779,6 +950,7 @@ async function createApp(): Promise<void> {
   wireBackend();
 
   mainWindow = createFlyoutWindow(settings);
+  applyWindowBackgroundMaterial(mainWindow);
   mainWindow.on("close", (evt) => {
     if (isQuitting) {
       return;

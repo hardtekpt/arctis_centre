@@ -15,6 +15,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html[data-mica="true"],
+body[data-mica="true"],
+body[data-mica="true"] #root {
+  background: rgb(255 255 255 / 0.01);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
+}
+
 * {
   box-sizing: border-box;
 }

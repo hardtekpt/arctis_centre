@@ -46,6 +46,8 @@ export interface UiSettings {
   textScale: number;
   showBatteryPercent: boolean;
   closeOnBlur: boolean;
+  micaBlur: boolean;
+  notificationTimeout: number;
   flyoutWidth: number;
   flyoutHeight: number;
   toggleShortcut: string;

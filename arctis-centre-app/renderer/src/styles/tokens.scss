@@ -47,3 +47,21 @@
   --button-highlight: #b1b1b123;
   --button-border: #9797972b;
 }
+
+:root[data-mica="true"][data-theme="light"] {
+  --tray-background: rgb(248 248 248 / 84%);
+  --tray-border: rgb(255 255 255 / 30%);
+  --page-section-bg: rgb(255 255 255 / 56%);
+  --button-background: rgb(255 255 255 / 62%);
+  --button-highlight: rgb(255 255 255 / 76%);
+  --button-border: rgb(255 255 255 / 22%);
+}
+
+:root[data-mica="true"][data-theme="dark"] {
+  --tray-background: rgb(24 24 24 / 76%);
+  --tray-border: rgb(255 255 255 / 10%);
+  --page-section-bg: rgb(255 255 255 / 9%);
+  --button-background: rgb(255 255 255 / 12%);
+  --button-highlight: rgb(255 255 255 / 16%);
+  --button-border: rgb(255 255 255 / 8%);
+}

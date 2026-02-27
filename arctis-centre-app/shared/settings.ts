@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS: UiSettings = {
   textScale: 100,
   showBatteryPercent: true,
   closeOnBlur: true,
+  micaBlur: true,
+  notificationTimeout: 5,
   flyoutWidth: 760,
   flyoutHeight: 520,
   toggleShortcut: "CommandOrControl+Shift+A",
@@ -76,6 +78,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...(partial ?? {}),
+    notificationTimeout: clamp((partial?.notificationTimeout ?? DEFAULT_SETTINGS.notificationTimeout), 2, 30),
     flyoutWidth: clamp((partial?.flyoutWidth ?? DEFAULT_SETTINGS.flyoutWidth), 320, 1000),
     flyoutHeight: clamp((partial?.flyoutHeight ?? DEFAULT_SETTINGS.flyoutHeight), 260, 1200),
     visibleChannels,
